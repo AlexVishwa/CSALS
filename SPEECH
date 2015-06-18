@@ -1,0 +1,120 @@
+use strict';
+
+$(document).ready(function() {
+  var audio = $('.audio').get(0),
+    textArea = $('#textArea');
+
+  var textChanged = false,
+    spanishText = '...',
+    englishText = '...';
+
+  $('#textArea').val(englishText);
+
+  $('#voice').change(function(){
+    if (!textChanged) {
+      if ($(this).val() === 'VoiceEsEsEnrique')
+        $('#textArea').val(spanishText);
+      else
+        $('#textArea').val(englishText);
+    }
+  });
+
+  $('#textArea').change(function(){
+    textChanged = true;
+  });
+
+  // IE and Safari not supported disabled Speak button
+  if ($('body').hasClass('ie') || $('body').hasClass('safari')) {
+    $('.speak-button').prop('disabled', true);
+  }
+
+  if ($('.speak-button').prop('disabled')) {
+    $('.ie-speak .arrow-box').show();
+  }
+
+  $('.audio').on('error', function () {
+    $('.result').hide();
+    $('errorMgs').text('Error processing the request.');
+    $('.errorMsg').css('color','red');
+    $('.error').show();
+  });
+
+  $('.audio').on('loadeddata', function () {
+    $('.result').show();
+    $('.error').hide();
+  });
+
+  $('.download-button').click(function() {
+    textArea.focus();
+    if (validText(textArea.val())) {
+      window.location.href = '/synthesize?download=true&' + $('.speech-form').serialize();
+    }
+  });
+
+  $('.speak-button').click(function() {
+    $('.result').hide();
+    audio.pause();
+
+    $('#textArea').focus();
+    if (validText(textArea.val())) {
+      audio.setAttribute('src','/synthesize?' + $('.speech-form').serialize());
+    }
+  });
+
+  function validText(text) {
+    if ($.trim(text)) {
+      $('.error').hide();
+      return true;
+    } else {
+      $('.errorMsg').text('Please enter the text you would like to synthesize in the text window.');
+      $('.errorMsg').css('color','#00b2ef');
+      $('.error').show();
+      return false;
+    }
+  }
+});
+
+
+
+'use strict';
+
+var express = require('express'),
+  app = express(),
+  bluemix = require('./config/bluemix'),
+  watson = require('watson-developer-cloud'),
+  extend = require('util')._extend;
+
+// Bootstrap application settings
+require('./config/express')(app);
+
+// If Bluemix credentials exist, then override local
+var credentials = extend({
+  version: 'v1',
+  username: '<username>',
+  password: '<password>',
+  headers: { 'Accept': 'audio/ogg; codecs=opus' }
+}, bluemix.getServiceCreds('text_to_speech')); // VCAP_SERVICES
+
+// Create the service wrapper
+var textToSpeech = new watson.text_to_speech(credentials);
+
+// Render the index page
+app.get('/', function(req, res) {
+  res.render('index');
+});
+
+app.get('/synthesize', function(req, res) {
+  var transcript = textToSpeech.synthesize(req.query);
+
+  transcript.on('response', function(response) {
+    console.log(response.headers);
+    if (req.query.download) {
+      response.headers['content-disposition'] = 'attachment; filename=transcript.ogg';
+    }
+  });
+  transcript.pipe(res);
+});
+
+var port = process.env.VCAP_APP_PORT || 3000;
+app.listen(port);
+console.log('listening at:', port);
